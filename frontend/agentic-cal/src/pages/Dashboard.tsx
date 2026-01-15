@@ -30,7 +30,20 @@ const EXAMPLE_TASKS: Task[] = [
         completed: false,
         tags: [EXAMPLE_TAGS[0], EXAMPLE_TAGS[2]],
         date: format(new Date(), "yyyy-MM-dd"),
-        reminders: [],
+        reminders: [
+            {
+                id: "r-1-1",
+                taskId: "1",
+                description: "Prep notes 10 minutes before standup",
+                reminderDate: `${format(new Date(), "yyyy-MM-dd")}T08:50`,
+            },
+            {
+                id: "r-1-2",
+                taskId: "1",
+                description: "Join standup",
+                reminderDate: `${format(new Date(), "yyyy-MM-dd")}T09:00`,
+            },
+        ],
     },
     {
         id: "2",
@@ -39,7 +52,14 @@ const EXAMPLE_TASKS: Task[] = [
         completed: true,
         tags: [EXAMPLE_TAGS[0]],
         date: format(new Date(), "yyyy-MM-dd"),
-        reminders: [],
+        reminders: [
+            {
+                id: "r-2-1",
+                taskId: "2",
+                description: "Start PR review block",
+                reminderDate: `${format(new Date(), "yyyy-MM-dd")}T11:30`,
+            },
+        ],
     },
     {
         id: "3",
@@ -57,7 +77,20 @@ const EXAMPLE_TASKS: Task[] = [
         completed: false,
         tags: [EXAMPLE_TAGS[1], EXAMPLE_TAGS[3]],
         date: format(addMonths(new Date(), 0), "yyyy-MM-") + "20",
-        reminders: [],
+        reminders: [
+            {
+                id: "r-4-1",
+                taskId: "4",
+                description: "Confirm appointment details",
+                reminderDate: `${format(addMonths(new Date(), 0), "yyyy-MM-")}20T10:00`,
+            },
+            {
+                id: "r-4-2",
+                taskId: "4",
+                description: "Leave home for clinic",
+                reminderDate: `${format(addMonths(new Date(), 0), "yyyy-MM-")}20T13:30`,
+            },
+        ],
     },
     {
         id: "5",
@@ -66,7 +99,14 @@ const EXAMPLE_TASKS: Task[] = [
         completed: false,
         tags: [EXAMPLE_TAGS[0], EXAMPLE_TAGS[3]],
         date: format(addMonths(new Date(), 1), "yyyy-MM-") + "05",
-        reminders: [],
+        reminders: [
+            {
+                id: "r-5-1",
+                taskId: "5",
+                description: "Final review before submission",
+                reminderDate: `${format(addMonths(new Date(), 1), "yyyy-MM-")}05T09:00`,
+            },
+        ],
     },
 ];
 
@@ -921,7 +961,7 @@ function Dashboard() {
                                     </Button>
                                 </div>
                                 {newTaskReminders.length > 0 && (
-                                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                                    <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
                                         {newTaskReminders.map((reminder) => (
                                             <div key={reminder.id} className="flex gap-2 items-start p-2 border rounded-md">
                                                 <div className="flex-1 space-y-2">
@@ -1069,7 +1109,7 @@ function Dashboard() {
                                     </Button>
                                 </div>
                                 {editTaskReminders.length > 0 && (
-                                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                                    <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
                                         {editTaskReminders.map((reminder) => (
                                             <div key={reminder.id} className="flex gap-2 items-start p-2 border rounded-md">
                                                 <div className="flex-1 space-y-2">
@@ -1157,7 +1197,7 @@ function Dashboard() {
                         </div>
 
                         {/* Body */}
-                        <div className="flex-1 overflow-y-auto p-6">
+                        <div className="flex-1 overflow-y-auto no-scrollbar p-6">
                             {viewingDayTasks.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                                     <CalendarIcon className="h-12 w-12 mb-4 opacity-50" />

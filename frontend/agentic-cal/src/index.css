@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Scrollbar utility */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* Agentic Calendar - Modern Dark Theme with Cyan Accents */
