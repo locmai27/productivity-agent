@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Bell, Plus, Trash2 } from "lucide-react";
 import { addMonths, subMonths, startOfMonth, format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { ChatbotModal } from "@/components/dashboard/ChatbotModal";
 import { TaskCard } from "@/components/dashboard/TaskCard";
 import type { Task } from "@/types/task";
 import type { Tag } from "@/types/tag";
+import type { Reminder } from "@/types/reminder";
 
 const EXAMPLE_TAGS: Tag[] = [
     { id: "1", name: "work", color: "#3b82f6" },
@@ -28,6 +29,7 @@ const EXAMPLE_TASKS: Task[] = [
         completed: false,
         tags: [EXAMPLE_TAGS[0], EXAMPLE_TAGS[2]],
         date: format(new Date(), "yyyy-MM-dd"),
+        reminders: [],
     },
     {
         id: "2",
@@ -36,6 +38,7 @@ const EXAMPLE_TASKS: Task[] = [
         completed: true,
         tags: [EXAMPLE_TAGS[0]],
         date: format(new Date(), "yyyy-MM-dd"),
+        reminders: [],
     },
     {
         id: "3",
@@ -44,6 +47,7 @@ const EXAMPLE_TASKS: Task[] = [
         completed: false,
         tags: [EXAMPLE_TAGS[1]],
         date: format(addMonths(new Date(), 0), "yyyy-MM-") + "15",
+        reminders: [],
     },
     {
         id: "4",
@@ -52,6 +56,7 @@ const EXAMPLE_TASKS: Task[] = [
         completed: false,
         tags: [EXAMPLE_TAGS[1], EXAMPLE_TAGS[3]],
         date: format(addMonths(new Date(), 0), "yyyy-MM-") + "20",
+        reminders: [],
     },
     {
         id: "5",
@@ -60,6 +65,7 @@ const EXAMPLE_TASKS: Task[] = [
         completed: false,
         tags: [EXAMPLE_TAGS[0], EXAMPLE_TAGS[3]],
         date: format(addMonths(new Date(), 1), "yyyy-MM-") + "05",
+        reminders: [],
     },
 ];
 
@@ -97,12 +103,14 @@ function Dashboard() {
     const [newTaskTitle, setNewTaskTitle] = useState<string>("");
     const [newTaskDescription, setNewTaskDescription] = useState<string>("");
     const [newTaskTags, setNewTaskTags] = useState<Tag[]>([]);
+    const [newTaskReminders, setNewTaskReminders] = useState<Reminder[]>([]);
 
     // Edit task modal state
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [editTaskTitle, setEditTaskTitle] = useState<string>("");
     const [editTaskDescription, setEditTaskDescription] = useState<string>("");
     const [editTaskTags, setEditTaskTags] = useState<Tag[]>([]);
+    const [editTaskReminders, setEditTaskReminders] = useState<Reminder[]>([]);
 
     // Day view modal state
     const [viewingDayDate, setViewingDayDate] = useState<string | null>(null);
@@ -253,6 +261,7 @@ function Dashboard() {
         setNewTaskTitle("");
         setNewTaskDescription("");
         setNewTaskTags([]);
+        setNewTaskReminders([]);
     };
 
     const handleCloseTaskModal = () => {
@@ -260,6 +269,7 @@ function Dashboard() {
         setNewTaskTitle("");
         setNewTaskDescription("");
         setNewTaskTags([]);
+        setNewTaskReminders([]);
     };
 
     const handleSaveNewTask = () => {
@@ -276,6 +286,7 @@ function Dashboard() {
             completed: false,
             tags: newTaskTags,
             date: taskModalDate,
+            reminders: newTaskReminders,
         };
 
         setTasks((prev) => [...prev, newTask]);
@@ -290,11 +301,56 @@ function Dashboard() {
         );
     };
 
+    const handleAddNewReminder = () => {
+        const defaultDate = taskModalDate || format(new Date(), "yyyy-MM-dd");
+        const defaultTime = "09:00"; // Default to 9:00 AM
+        const newReminder: Reminder = {
+            id: Date.now().toString(),
+            taskId: "", // Will be set when task is created
+            description: "",
+            reminderDate: `${defaultDate}T${defaultTime}`,
+        };
+        setNewTaskReminders((prev) => [...prev, newReminder]);
+    };
+
+    const handleUpdateNewReminder = (id: string, field: 'description' | 'reminderDate', value: string) => {
+        setNewTaskReminders((prev) =>
+            prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+        );
+    };
+
+    const handleDeleteNewReminder = (id: string) => {
+        setNewTaskReminders((prev) => prev.filter((r) => r.id !== id));
+    };
+
+    const handleAddEditReminder = () => {
+        if (!editingTask) return;
+        const defaultTime = "09:00"; // Default to 9:00 AM
+        const newReminder: Reminder = {
+            id: Date.now().toString(),
+            taskId: editingTask.id,
+            description: "",
+            reminderDate: `${editingTask.date}T${defaultTime}`,
+        };
+        setEditTaskReminders((prev) => [...prev, newReminder]);
+    };
+
+    const handleUpdateEditReminder = (id: string, field: 'description' | 'reminderDate', value: string) => {
+        setEditTaskReminders((prev) =>
+            prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+        );
+    };
+
+    const handleDeleteEditReminder = (id: string) => {
+        setEditTaskReminders((prev) => prev.filter((r) => r.id !== id));
+    };
+
     const handleOpenEditModal = (task: Task) => {
         setEditingTask(task);
         setEditTaskTitle(task.title);
         setEditTaskDescription(task.description);
         setEditTaskTags(task.tags);
+        setEditTaskReminders(task.reminders || []);
     };
 
     const handleCloseEditModal = () => {
@@ -302,6 +358,7 @@ function Dashboard() {
         setEditTaskTitle("");
         setEditTaskDescription("");
         setEditTaskTags([]);
+        setEditTaskReminders([]);
     };
 
     const handleSaveEditTask = () => {
@@ -316,6 +373,7 @@ function Dashboard() {
             title: editTaskTitle,
             description: editTaskDescription,
             tags: editTaskTags,
+            reminders: editTaskReminders,
         };
 
         setTasks((prev) =>
@@ -799,6 +857,57 @@ function Dashboard() {
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Reminders Section */}
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-sm font-medium flex items-center gap-2">
+                                        <Bell className="h-4 w-4" />
+                                        Reminders
+                                    </label>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleAddNewReminder}
+                                        className="h-8"
+                                    >
+                                        <Plus className="h-4 w-4 mr-1" />
+                                        Add Reminder
+                                    </Button>
+                                </div>
+                                {newTaskReminders.length > 0 && (
+                                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                                        {newTaskReminders.map((reminder) => (
+                                            <div key={reminder.id} className="flex gap-2 items-start p-2 border rounded-md">
+                                                <div className="flex-1 space-y-2">
+                                                    <Input
+                                                        placeholder="Reminder description"
+                                                        value={reminder.description}
+                                                        onChange={(e) => handleUpdateNewReminder(reminder.id, 'description', e.target.value)}
+                                                        className="text-sm"
+                                                    />
+                                                    <Input
+                                                        type="datetime-local"
+                                                        value={reminder.reminderDate}
+                                                        onChange={(e) => handleUpdateNewReminder(reminder.id, 'reminderDate', e.target.value)}
+                                                        className="text-sm"
+                                                    />
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleDeleteNewReminder(reminder.id)}
+                                                    className="h-8 w-8 text-destructive"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Footer */}
@@ -895,6 +1004,57 @@ function Dashboard() {
                                         </button>
                                     ))}
                                 </div>
+                            </div>
+
+                            {/* Reminders Section */}
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-sm font-medium flex items-center gap-2">
+                                        <Bell className="h-4 w-4" />
+                                        Reminders
+                                    </label>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleAddEditReminder}
+                                        className="h-8"
+                                    >
+                                        <Plus className="h-4 w-4 mr-1" />
+                                        Add Reminder
+                                    </Button>
+                                </div>
+                                {editTaskReminders.length > 0 && (
+                                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                                        {editTaskReminders.map((reminder) => (
+                                            <div key={reminder.id} className="flex gap-2 items-start p-2 border rounded-md">
+                                                <div className="flex-1 space-y-2">
+                                                    <Input
+                                                        placeholder="Reminder description"
+                                                        value={reminder.description}
+                                                        onChange={(e) => handleUpdateEditReminder(reminder.id, 'description', e.target.value)}
+                                                        className="text-sm"
+                                                    />
+                                                    <Input
+                                                        type="datetime-local"
+                                                        value={reminder.reminderDate}
+                                                        onChange={(e) => handleUpdateEditReminder(reminder.id, 'reminderDate', e.target.value)}
+                                                        className="text-sm"
+                                                    />
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleDeleteEditReminder(reminder.id)}
+                                                    className="h-8 w-8 text-destructive"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
 

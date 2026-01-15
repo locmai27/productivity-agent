@@ -1,4 +1,5 @@
 import type { Tag } from "./tag"
+import type { Reminder } from "./reminder"
 
 export type Task = {
     id: string,
@@ -6,6 +7,7 @@ export type Task = {
     description: string,
     completed: boolean,
     tags: Tag[],
-    date: string
+    date: string,
+    reminders: Reminder[]
 }
 
