@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, X, Send } from "lucide-react";
+import { MessageCircle, X, Send, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 interface Message {
   id: string;
@@ -13,6 +15,7 @@ interface Message {
 
 export function ChatbotModal() {
   const [isOpen, setIsOpen] = useState(false);
+  const [rememberConversation, setRememberConversation] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -43,6 +46,15 @@ export function ChatbotModal() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
     }, 1000);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Handle file upload (will be integrated with backend)
+      console.log("File selected:", file.name);
+      // You can add logic here to upload the file to your backend
+    }
   };
 
   return (
@@ -120,8 +132,36 @@ export function ChatbotModal() {
               </ScrollArea>
 
               {/* Input */}
-              <div className="p-4 border-t border-border/50">
+              <div className="p-4 border-t border-border/50 space-y-3">
+                {/* Remember Conversation Toggle */}
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="remember-mode" className="text-sm text-muted-foreground">
+                    Remember this conversation
+                  </Label>
+                  <Switch
+                    id="remember-mode"
+                    checked={rememberConversation}
+                    onCheckedChange={setRememberConversation}
+                  />
+                </div>
+                
+                {/* Input and Buttons */}
                 <div className="flex gap-2">
+                  <input
+                    type="file"
+                    id="file-upload"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                    accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
+                  />
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => document.getElementById('file-upload')?.click()}
+                    title="Upload file"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
                   <Input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}

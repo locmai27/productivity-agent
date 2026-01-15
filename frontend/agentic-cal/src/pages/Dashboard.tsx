@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from "lucide-react";
 import { addMonths, subMonths, startOfMonth, format } from "date-fns";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -472,10 +473,10 @@ function Dashboard() {
             <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-md select-none">
                 <div className="container mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                        <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                             <CalendarIcon className="h-6 w-6 text-primary" />
-                            <h1 className="text-xl font-bold text-foreground">Calendar</h1>
-                        </div>
+                            <h1 className="text-xl font-bold text-foreground">AgenticCal</h1>
+                        </Link>
                         <div className="flex items-center gap-2">
                             <Button variant="outline" size="sm" onClick={handlePrevMonth}>
                                 <ChevronLeft className="h-4 w-4" />
