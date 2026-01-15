@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Mail, Lock, Eye, EyeOff, Calendar, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getAuth, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "firebase/auth";
 
 function SignUp() {
   const [showPassword, setShowPassword] = useState(false);
@@ -14,6 +15,19 @@ function SignUp() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
+
+  const navigate = useNavigate();
+  const auth = getAuth();
+  const provider = new GoogleAuthProvider();
+
+  useEffect(() => {
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // logged in, go straight to the dashboard
+        navigate('/dashboard');
+      }
+    })
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,13 +39,33 @@ function SignUp() {
     
     setPasswordError("");
     // Handle signup logic here
-    console.log("Signup attempt:", { name, email, password });
+
+    createUserWithEmailAndPassword(auth, email, password).then((userCredential) => {
+      const user = userCredential.user;
+      const userID = user.uid;
+      console.log("logged in as user with UID", userID);
+      navigate("/dashboard");
+    }).catch((error) => {
+      const errorCode = error.code;
+      const errorMessage = error.message;
+      console.error(`error: ${errorCode}, ${errorMessage}`);
+    })
   };
 
   const handleGoogleSignIn = () => {
     // Handle Google sign-in logic here
-    console.log("Google sign-in attempt");
+    signInWithPopup(auth, provider).then((userCredential) => {
+      const user = userCredential.user;
+      const userID = user.uid;
+      console.log("logged in as user with UID", userID);
+      navigate('/dashboard');
+    }).catch((error) => {
+      const errorCode = error.code;
+      const errorMessage = error.message;
+      console.error(`error: ${errorCode}, ${errorMessage}`);
+    })
   };
+
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">

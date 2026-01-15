@@ -8,6 +8,7 @@ import NotFound from "./pages/NotFound";
 import LogIn from "./pages/LogIn";
 import SignUp from "./pages/SignUp";
 import Dashboard from "./pages/Dashboard";
+import Memories from "./pages/Memories";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ const App = () => (
           <Route path="/login" element={<LogIn />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/memories" element={<Memories />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

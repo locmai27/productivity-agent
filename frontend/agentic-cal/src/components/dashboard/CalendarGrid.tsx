@@ -1,5 +1,7 @@
 import { CalendarDay } from "./CalendarDay";
 import { startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { Task } from "@/types/task";
 
@@ -7,6 +9,7 @@ interface CalendarGridProps {
     month: Date;
     tasks: Task[];
     onToggleComplete: (id: string) => void;
+    isFirstMonth?: boolean;
 
     // Drag portal hooks
     onDragPortalStart?: (task: Task, clientX: number, clientY: number, rect: DOMRect) => void;
@@ -17,6 +20,9 @@ interface CalendarGridProps {
     onAddTask?: (date: string) => void;
     onEditTask?: (task: Task) => void;
     onViewDay?: (date: string, tasks: Task[]) => void;
+    onPrevMonth?: () => void;
+    onToday?: () => void;
+    onNextMonth?: () => void;
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -27,11 +33,15 @@ export function CalendarGrid({
     onToggleComplete,
     onDragPortalStart,
     onDragPortalMove,
+    onPrevMonth,
+    onToday,
+    onNextMonth,
     onDragPortalEnd,
     draggingTaskId,
     onAddTask,
     onEditTask,
     onViewDay,
+    isFirstMonth = false,
 }: CalendarGridProps) {
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
@@ -56,9 +66,24 @@ export function CalendarGrid({
 
     return (
         <div className="mb-8 select-none">
-            <h2 className="text-2xl font-bold mb-4 text-foreground">
-                {format(month, "MMMM yyyy")}
-            </h2>
+            <div className="flex items-center justify-between mb-4 h-10">
+                <h2 className="text-2xl font-bold text-foreground leading-none">
+                    {format(month, "MMMM yyyy")}
+                </h2>
+                {isFirstMonth && (
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={onPrevMonth}>
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={onToday}>
+                            Today
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={onNextMonth}>
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                    </div>
+                )}
+            </div>
 
             <div className="grid grid-cols-7 gap-0 mb-1">
                 {WEEKDAYS.map((day) => (

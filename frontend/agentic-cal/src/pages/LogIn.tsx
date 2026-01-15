@@ -1,26 +1,58 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Mail, Lock, Eye, EyeOff, Calendar } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Calendar, UserRoundCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 
 function LogIn() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const navigate = useNavigate();
+  const auth = getAuth();
+  const provider = new GoogleAuthProvider();
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Handle login logic here
-    console.log("Login attempt:", { email, password });
+    signInWithEmailAndPassword(auth, email, password).then((userCredential) => {
+      const user = userCredential.user;
+      const userID = user.uid;
+      console.log("logged in as user with UID", userID);
+      navigate('/dashboard');
+    }).catch((error) => {
+      const errorCode = error.code;
+      const errorMessage = error.message;
+      console.error(`error: ${errorCode}, ${errorMessage}`);
+    })
   };
 
   const handleGoogleSignIn = () => {
     // Handle Google sign-in logic here
-    console.log("Google sign-in attempt");
+    signInWithPopup(auth, provider).then((userCredential) => {
+      const user = userCredential.user;
+      const userID = user.uid;
+      console.log("logged in as user with UID", userID);
+      navigate('/dashboard');
+    }).catch((error) => {
+      const errorCode = error.code;
+      const errorMessage = error.message;
+      console.error(`error: ${errorCode}, ${errorMessage}`);
+    })
   };
+
+  useEffect(() => {
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // logged in, go straight to the dashboard
+        navigate('/dashboard');
+      }
+    })
+  }, []);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Bell, Plus, Trash2 } from "lucide-react";
 import { addMonths, subMonths, startOfMonth, format } from "date-fns";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,6 +13,7 @@ import { TaskCard } from "@/components/dashboard/TaskCard";
 import type { Task } from "@/types/task";
 import type { Tag } from "@/types/tag";
 import type { Reminder } from "@/types/reminder";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 
 const EXAMPLE_TAGS: Tag[] = [
     { id: "1", name: "work", color: "#3b82f6" },
@@ -134,6 +135,30 @@ function Dashboard() {
         if (clean.startsWith('#') && clean.length === 7) return clean.toLowerCase();
         if (!clean.startsWith('#') && clean.length === 6) return `#${clean.toLowerCase()}`;
         return null;
+    };
+
+    const auth = getAuth();
+    const navigate = useNavigate();
+    useEffect(() => {
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // logged in so dont really need to do anything
+                console.log("logged in as user with UID", user.uid);
+            }
+            else {
+                navigate("/");
+            }
+        })
+    }, []);
+
+    const handleLogout = () => {
+        signOut(auth).then(() => {
+            navigate("/");
+        });
+    };
+
+    const handleMemories = () => {
+        navigate('/memories');
     };
 
     const isValidHexColor = (hex: string) => /^#[0-9A-Fa-f]{6}$/.test(hex);
@@ -536,14 +561,11 @@ function Dashboard() {
                             <h1 className="text-xl font-bold text-foreground">AgenticCal</h1>
                         </Link>
                         <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={handlePrevMonth}>
-                                <ChevronLeft className="h-4 w-4" />
+                            <Button variant="outline" size="sm" onClick={handleMemories}>
+                                Memories
                             </Button>
-                            <Button variant="outline" size="sm" onClick={handleToday}>
-                                Today
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={handleNextMonth}>
-                                <ChevronRight className="h-4 w-4" />
+                            <Button variant="outline" size="sm" onClick={handleLogout}>
+                                Log Out
                             </Button>
                         </div>
                     </div>
@@ -558,7 +580,7 @@ function Dashboard() {
                         animate={{ opacity: 1 }}
                         className="flex-1 overflow-auto select-none"
                     >
-                        {visibleMonths.map((month) => (
+                        {visibleMonths.map((month, index) => (
                             <CalendarGrid
                                 key={month.toISOString()}
                                 month={month}
@@ -571,6 +593,10 @@ function Dashboard() {
                                 onAddTask={handleOpenTaskModal}
                                 onEditTask={handleOpenEditModal}
                                 onViewDay={handleViewDay}
+                                onPrevMonth={handlePrevMonth}
+                                onToday={handleToday}
+                                onNextMonth={handleNextMonth}
+                                isFirstMonth={index === 0}
                             />
                         ))}
 
