@@ -103,7 +103,25 @@ function Memories() {
     };
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen bg-background relative overflow-hidden">
+            {/* Glassmorphism background */}
+            <div className="fixed inset-0 z-0 pointer-events-none">
+                {/* Gradient blobs */}
+                <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
+                <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
+                <div className="absolute top-1/2 left-1/2 w-80 h-80 bg-blue-500/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000"></div>
+                {/* Faint dotted texture */}
+                <div
+                    className="absolute inset-0 opacity-20"
+                    style={{
+                        backgroundImage: "radial-gradient(circle at center, rgba(255,255,255,0.15) 1px, transparent 1px)",
+                        backgroundSize: "22px 22px",
+                    }}
+                ></div>
+            </div>
+
+            {/* Content wrapper with relative positioning */}
+            <div className="relative z-10">
             {/* Header */}
             <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-md">
                 <div className="container mx-auto px-4 py-4">
@@ -123,7 +141,7 @@ function Memories() {
             <div className="container mx-auto px-4 py-8">
                 <div className="max-w-2xl mx-auto">
                     {/* Info card */}
-                    <div className="mb-8 p-4 rounded-lg border border-border/50 bg-card">
+                    <div className="mb-8 p-4 rounded-lg border border-white/20 bg-white/10 backdrop-blur-md">
                         <p className="text-sm text-muted-foreground">
                             Drag memories to reorder them by priority. Memories at the top are prioritized higher by the chatbot.
                         </p>
@@ -203,6 +221,7 @@ function Memories() {
                             ))}
                         </Reorder.Group>
                     )}
+                            </div>
                 </div>
             </div>
 
