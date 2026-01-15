@@ -1,14 +1,5 @@
 import { CalendarDay } from "./CalendarDay";
-import {
-    startOfMonth,
-    endOfMonth,
-    startOfWeek,
-    endOfWeek,
-    eachDayOfInterval,
-    isSameMonth,
-    isSameDay,
-    format,
-} from "date-fns";
+import { startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, format } from "date-fns";
 
 import type { Task } from "@/types/task";
 
@@ -38,11 +29,19 @@ export function CalendarGrid({
 }: CalendarGridProps) {
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
-    const calendarStart = startOfWeek(monthStart);
-    const calendarEnd = endOfWeek(monthEnd);
     const today = new Date();
 
-    const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+    // Build slots so the grid shows only days for the month,
+    // with empty slots before the 1st and after the last day.
+    const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    const leading = monthStart.getDay(); // 0 (Sun) - 6 (Sat)
+    const totalSlots = leading + monthDays.length;
+    const trailing = (7 - (totalSlots % 7)) % 7;
+    const days: Array<Date | null> = [
+        ...Array(leading).fill(null),
+        ...monthDays,
+        ...Array(trailing).fill(null),
+    ];
 
     const getTasksForDate = (date: Date) => {
         const dateStr = format(date, "yyyy-MM-dd");
@@ -67,20 +66,27 @@ export function CalendarGrid({
             </div>
 
             <div className="grid grid-cols-7 gap-0">
-                {days.map((day) => (
-                    <CalendarDay
-                        key={day.toISOString()}
-                        date={day}
-                        isToday={isSameDay(day, today)}
-                        isCurrentMonth={isSameMonth(day, month)}
-                        tasks={getTasksForDate(day)}
-                        onToggleComplete={onToggleComplete}
-                        onDragPortalStart={onDragPortalStart}
-                        onDragPortalMove={onDragPortalMove}
-                        onDragPortalEnd={onDragPortalEnd}
-                        draggingTaskId={draggingTaskId}
-                    />
-                ))}
+                {days.map((day, idx) =>
+                    day ? (
+                        <CalendarDay
+                            key={day.toISOString()}
+                            date={day}
+                            isToday={isSameDay(day, today)}
+                            isCurrentMonth={isSameMonth(day, month)}
+                            tasks={getTasksForDate(day)}
+                            onToggleComplete={onToggleComplete}
+                            onDragPortalStart={onDragPortalStart}
+                            onDragPortalMove={onDragPortalMove}
+                            onDragPortalEnd={onDragPortalEnd}
+                            draggingTaskId={draggingTaskId}
+                        />
+                    ) : (
+                        <div
+                            key={`empty-${idx}`}
+                            className={`min-h-[120px] border border-border/50 p-2 flex flex-col bg-transparent`}
+                        />
+                    )
+                )}
             </div>
         </div>
     );
