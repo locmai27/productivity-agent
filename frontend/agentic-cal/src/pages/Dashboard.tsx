@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from "lucide-react";
 import { addMonths, subMonths, startOfMonth, format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CalendarGrid } from "@/components/dashboard/CalendarGrid";
 import TagManager from "@/components/dashboard/TagManager";
 import { ChatbotModal } from "@/components/dashboard/ChatbotModal";
@@ -90,6 +91,22 @@ function Dashboard() {
     const [hexInput, setHexInput] = useState<string>("");
     const [hexError, setHexError] = useState<string | null>(null);
 
+    // New task modal state
+    const [taskModalDate, setTaskModalDate] = useState<string | null>(null);
+    const [newTaskTitle, setNewTaskTitle] = useState<string>("");
+    const [newTaskDescription, setNewTaskDescription] = useState<string>("");
+    const [newTaskTags, setNewTaskTags] = useState<Tag[]>([]);
+
+    // Edit task modal state
+    const [editingTask, setEditingTask] = useState<Task | null>(null);
+    const [editTaskTitle, setEditTaskTitle] = useState<string>("");
+    const [editTaskDescription, setEditTaskDescription] = useState<string>("");
+    const [editTaskTags, setEditTaskTags] = useState<Tag[]>([]);
+
+    // Day view modal state
+    const [viewingDayDate, setViewingDayDate] = useState<string | null>(null);
+    const [viewingDayTasks, setViewingDayTasks] = useState<Task[]>([]);
+
     // Color conversion helpers
     const hexToRgb = (hex: string) => {
         const h = hex.replace('#', '');
@@ -163,6 +180,15 @@ function Dashboard() {
                 task.id === taskId ? { ...task, completed: !task.completed } : task
             )
         );
+        
+        // Update day view tasks if the modal is open
+        if (viewingDayDate) {
+            setViewingDayTasks((prev) =>
+                prev.map((task) =>
+                    task.id === taskId ? { ...task, completed: !task.completed } : task
+                )
+            );
+        }
     };
 
     const handleMove = useCallback((taskId: string, newDate: string) => {
@@ -219,6 +245,124 @@ function Dashboard() {
         })));
         
         handleCloseColorModal();
+    };
+
+    const handleOpenTaskModal = (date: string) => {
+        setTaskModalDate(date);
+        setNewTaskTitle("");
+        setNewTaskDescription("");
+        setNewTaskTags([]);
+    };
+
+    const handleCloseTaskModal = () => {
+        setTaskModalDate(null);
+        setNewTaskTitle("");
+        setNewTaskDescription("");
+        setNewTaskTags([]);
+    };
+
+    const handleSaveNewTask = () => {
+        if (!newTaskTitle.trim()) {
+            alert("Please enter a task title");
+            return;
+        }
+        if (!taskModalDate) return;
+
+        const newTask: Task = {
+            id: Date.now().toString(),
+            title: newTaskTitle,
+            description: newTaskDescription,
+            completed: false,
+            tags: newTaskTags,
+            date: taskModalDate,
+        };
+
+        setTasks((prev) => [...prev, newTask]);
+        handleCloseTaskModal();
+    };
+
+    const handleToggleTaskTag = (tag: Tag) => {
+        setNewTaskTags((prev) =>
+            prev.some((t) => t.id === tag.id)
+                ? prev.filter((t) => t.id !== tag.id)
+                : [...prev, tag]
+        );
+    };
+
+    const handleOpenEditModal = (task: Task) => {
+        setEditingTask(task);
+        setEditTaskTitle(task.title);
+        setEditTaskDescription(task.description);
+        setEditTaskTags(task.tags);
+    };
+
+    const handleCloseEditModal = () => {
+        setEditingTask(null);
+        setEditTaskTitle("");
+        setEditTaskDescription("");
+        setEditTaskTags([]);
+    };
+
+    const handleSaveEditTask = () => {
+        if (!editTaskTitle.trim()) {
+            alert("Please enter a task title");
+            return;
+        }
+        if (!editingTask) return;
+
+        const updatedTask = {
+            ...editingTask,
+            title: editTaskTitle,
+            description: editTaskDescription,
+            tags: editTaskTags,
+        };
+
+        setTasks((prev) =>
+            prev.map((task) =>
+                task.id === editingTask.id ? updatedTask : task
+            )
+        );
+
+        // Update day view tasks if the modal is open
+        if (viewingDayDate) {
+            setViewingDayTasks((prev) =>
+                prev.map((task) =>
+                    task.id === editingTask.id ? updatedTask : task
+                )
+            );
+        }
+
+        handleCloseEditModal();
+    };
+
+    const handleDeleteTask = () => {
+        if (!editingTask) return;
+        setTasks((prev) => prev.filter((task) => task.id !== editingTask.id));
+        
+        // Update day view tasks if the modal is open
+        if (viewingDayDate) {
+            setViewingDayTasks((prev) => prev.filter((task) => task.id !== editingTask.id));
+        }
+        
+        handleCloseEditModal();
+    };
+
+    const handleToggleEditTaskTag = (tag: Tag) => {
+        setEditTaskTags((prev) =>
+            prev.some((t) => t.id === tag.id)
+                ? prev.filter((t) => t.id !== tag.id)
+                : [...prev, tag]
+        );
+    };
+
+    const handleViewDay = (date: string, tasks: Task[]) => {
+        setViewingDayDate(date);
+        setViewingDayTasks(tasks);
+    };
+
+    const handleCloseDayView = () => {
+        setViewingDayDate(null);
+        setViewingDayTasks([]);
     };
 
     const handleHexChange = (value: string) => {
@@ -365,6 +509,9 @@ function Dashboard() {
                                 onDragPortalMove={handleDragPortalMove}
                                 onDragPortalEnd={handleDragPortalEnd}
                                 draggingTaskId={draggingTaskId}
+                                onAddTask={handleOpenTaskModal}
+                                onEditTask={handleOpenEditModal}
+                                onViewDay={handleViewDay}
                             />
                         ))}
 
@@ -397,11 +544,25 @@ function Dashboard() {
             <ChatbotModal />
 
             {/* Color Picker Modal */}
-            {colorModalTag && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="absolute inset-0 bg-black/50" onClick={handleCloseColorModal} />
-                    
-                    <div className="relative z-10 w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl border bg-background shadow-2xl my-8">
+            <AnimatePresence>
+                {colorModalTag && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="absolute inset-0 bg-black/50"
+                            onClick={handleCloseColorModal}
+                        />
+                        
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            className="relative z-10 w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl border bg-background shadow-2xl my-8"
+                        >
                         {/* Header */}
                         <div className="flex items-start justify-between gap-4 p-6 border-b">
                             <div className="min-w-0">
@@ -551,9 +712,323 @@ function Dashboard() {
                                 </Button>
                             </div>
                         </div>
+                        </motion.div>
                     </div>
-                </div>
-            )}
+                )}
+            </AnimatePresence>
+
+            {/* Task Modal */}
+            <AnimatePresence>
+                {taskModalDate && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="absolute inset-0 bg-black/50"
+                            onClick={handleCloseTaskModal}
+                        />
+                        
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            className="relative z-10 w-full max-w-md rounded-xl border bg-background shadow-2xl p-6"
+                        >
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-semibold">Add Task</h3>
+                            <Button variant="ghost" size="icon" onClick={handleCloseTaskModal}>
+                                <X className="h-5 w-5" />
+                            </Button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="flex flex-col gap-4">
+                            {/* Title Input */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Title</label>
+                                <Input
+                                    value={newTaskTitle}
+                                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                                    placeholder="Enter task title"
+                                    onKeyPress={(e) => {
+                                        if (e.key === "Enter") handleSaveNewTask();
+                                    }}
+                                />
+                            </div>
+
+                            {/* Description Input */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Description</label>
+                                <textarea
+                                    value={newTaskDescription}
+                                    onChange={(e) => setNewTaskDescription(e.target.value)}
+                                    placeholder="Enter task description (optional)"
+                                    className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                />
+                            </div>
+
+                            {/* Tag Selection */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Tags</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {tags.map((tag) => (
+                                        <button
+                                            key={tag.id}
+                                            onClick={() => handleToggleTaskTag(tag)}
+                                            className={`px-3 py-1 rounded-full text-sm font-medium transition-all border-2 ${
+                                                newTaskTags.some((t) => t.id === tag.id)
+                                                    ? "border-current text-foreground"
+                                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                                            }`}
+                                            style={{
+                                                backgroundColor: newTaskTags.some((t) => t.id === tag.id)
+                                                    ? tag.color
+                                                    : `${tag.color}20`,
+                                                color: newTaskTags.some((t) => t.id === tag.id)
+                                                    ? "#fff"
+                                                    : tag.color,
+                                            }}
+                                        >
+                                            {tag.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+                            <Button variant="ghost" onClick={handleCloseTaskModal}>
+                                Cancel
+                            </Button>
+                            <Button onClick={handleSaveNewTask}>
+                                Add Task
+                            </Button>
+                        </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Edit Task Modal */}
+            <AnimatePresence>
+                {editingTask && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="absolute inset-0 bg-black/50"
+                            onClick={handleCloseEditModal}
+                        />
+                        
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            className="relative z-10 w-full max-w-md rounded-xl border bg-background shadow-2xl p-6"
+                        >
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-semibold">Edit Task</h3>
+                            <Button variant="ghost" size="icon" onClick={handleCloseEditModal}>
+                                <X className="h-5 w-5" />
+                            </Button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="flex flex-col gap-4">
+                            {/* Title Input */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Title</label>
+                                <Input
+                                    value={editTaskTitle}
+                                    onChange={(e) => setEditTaskTitle(e.target.value)}
+                                    placeholder="Enter task title"
+                                    onKeyPress={(e) => {
+                                        if (e.key === "Enter") handleSaveEditTask();
+                                    }}
+                                />
+                            </div>
+
+                            {/* Description Input */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Description</label>
+                                <textarea
+                                    value={editTaskDescription}
+                                    onChange={(e) => setEditTaskDescription(e.target.value)}
+                                    placeholder="Enter task description (optional)"
+                                    className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                />
+                            </div>
+
+                            {/* Tag Selection */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Tags</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {tags.map((tag) => (
+                                        <button
+                                            key={tag.id}
+                                            onClick={() => handleToggleEditTaskTag(tag)}
+                                            className={`px-3 py-1 rounded-full text-sm font-medium transition-all border-2 ${
+                                                editTaskTags.some((t) => t.id === tag.id)
+                                                    ? "border-current text-foreground"
+                                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                                            }`}
+                                            style={{
+                                                backgroundColor: editTaskTags.some((t) => t.id === tag.id)
+                                                    ? tag.color
+                                                    : `${tag.color}20`,
+                                                color: editTaskTags.some((t) => t.id === tag.id)
+                                                    ? "#fff"
+                                                    : tag.color,
+                                            }}
+                                        >
+                                            {tag.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex justify-between gap-2 mt-6 pt-4 border-t">
+                            <Button variant="destructive" onClick={handleDeleteTask}>
+                                Delete Task
+                            </Button>
+                            <div className="flex gap-2">
+                                <Button variant="ghost" onClick={handleCloseEditModal}>
+                                    Cancel
+                                </Button>
+                                <Button onClick={handleSaveEditTask}>
+                                    Save Changes
+                                </Button>
+                            </div>
+                        </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Day View Modal */}
+            <AnimatePresence>
+                {viewingDayDate && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="absolute inset-0 bg-black/50"
+                            onClick={handleCloseDayView}
+                        />
+                        
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            className="relative z-10 w-full max-w-2xl max-h-[80vh] rounded-xl border bg-background shadow-2xl flex flex-col"
+                        >
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b">
+                            <div>
+                                <h3 className="text-xl font-semibold">
+                                    {format(new Date(viewingDayDate + "T00:00:00"), "MMMM d, yyyy")}
+                                </h3>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    {viewingDayTasks.length} {viewingDayTasks.length === 1 ? "task" : "tasks"}
+                                </p>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={handleCloseDayView}>
+                                <X className="h-5 w-5" />
+                            </Button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="flex-1 overflow-y-auto p-6">
+                            {viewingDayTasks.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                                    <CalendarIcon className="h-12 w-12 mb-4 opacity-50" />
+                                    <p>No tasks for this day</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {viewingDayTasks.map((task) => (
+                                        <div
+                                            key={task.id}
+                                            className={`p-4 rounded-lg border transition-all ${
+                                                task.completed
+                                                    ? "bg-muted/30 border-border/50"
+                                                    : "bg-card border-border hover:border-primary/50"
+                                            }`}
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <Checkbox
+                                                    checked={task.completed}
+                                                    onCheckedChange={() => handleToggleComplete(task.id)}
+                                                    className="mt-1"
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                    <h4
+                                                        className={`text-lg font-medium mb-2 ${
+                                                            task.completed
+                                                                ? "line-through text-muted-foreground"
+                                                                : "text-foreground"
+                                                        }`}
+                                                    >
+                                                        {task.title}
+                                                    </h4>
+                                                    {task.description && (
+                                                        <p className="text-sm text-muted-foreground mb-3 whitespace-pre-wrap">
+                                                            {task.description}
+                                                        </p>
+                                                    )}
+                                                    {task.tags.length > 0 && (
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {task.tags.map((tag) => (
+                                                                <span
+                                                                    key={tag.id}
+                                                                    className="px-3 py-1 rounded-full text-xs font-medium text-white"
+                                                                    style={{ backgroundColor: tag.color }}
+                                                                >
+                                                                    {tag.name}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleOpenEditModal(task)}
+                                                    className="flex-shrink-0"
+                                                >
+                                                    Edit
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex justify-end gap-2 p-6 border-t">
+                            <Button onClick={handleCloseDayView}>
+                                Close
+                            </Button>
+                        </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

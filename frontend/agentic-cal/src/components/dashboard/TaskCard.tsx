@@ -12,6 +12,7 @@ interface TaskCardProps {
     onDragPortalMove?: (clientX: number, clientY: number) => void;
     onDragPortalEnd?: (clientX: number, clientY: number) => void;
 
+    onEdit?: (task: Task) => void;
     isOverlay?: boolean;
     hideWhileDragging?: boolean;
 }
@@ -22,6 +23,7 @@ export function TaskCard({
     onDragPortalStart,
     onDragPortalMove,
     onDragPortalEnd,
+    onEdit,
     isOverlay = false,
     hideWhileDragging = false,
 }: TaskCardProps) {
@@ -97,6 +99,19 @@ export function TaskCard({
 
             if (didStartPortalRef.current) {
                 onDragPortalEnd?.(e.clientX, e.clientY);
+            } else {
+                // If we didn't start a drag, treat it as a click
+                const start = startPointRef.current;
+                if (start) {
+                    const dx = e.clientX - start.x;
+                    const dy = e.clientY - start.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // If movement was minimal, treat it as a click
+                    if (dist < 6 && onEdit) {
+                        onEdit(task);
+                    }
+                }
             }
 
             setIsPointerDown(false);
@@ -134,7 +149,7 @@ export function TaskCard({
             window.removeEventListener("pointerup", handlePointerUp);
             window.removeEventListener("pointercancel", handlePointerCancel);
         };
-    }, [isPointerDown, onDragPortalStart, onDragPortalMove, onDragPortalEnd, task]);
+    }, [isPointerDown, onDragPortalStart, onDragPortalMove, onDragPortalEnd, onEdit, task]);
 
     return (
         <motion.div
@@ -179,6 +194,7 @@ export function TaskCard({
                 transition: "transform 100ms ease-out",
             }}
             className={containerClassName}
+            data-task-card
         >
             <div className="flex items-start gap-2">
                 <Checkbox

@@ -14,6 +14,9 @@ interface CalendarGridProps {
     onDragPortalEnd?: (clientX: number, clientY: number) => void;
 
     draggingTaskId?: string | null;
+    onAddTask?: (date: string) => void;
+    onEditTask?: (task: Task) => void;
+    onViewDay?: (date: string, tasks: Task[]) => void;
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -26,6 +29,9 @@ export function CalendarGrid({
     onDragPortalMove,
     onDragPortalEnd,
     draggingTaskId,
+    onAddTask,
+    onEditTask,
+    onViewDay,
 }: CalendarGridProps) {
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
@@ -79,6 +85,9 @@ export function CalendarGrid({
                             onDragPortalMove={onDragPortalMove}
                             onDragPortalEnd={onDragPortalEnd}
                             draggingTaskId={draggingTaskId}
+                            onAddTask={onAddTask}
+                            onEditTask={onEditTask}
+                            onViewDay={onViewDay}
                         />
                     ) : (
                         <div
