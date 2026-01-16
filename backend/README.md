@@ -1,3 +1,15 @@
+### To run frontend
+npm install
+then cd into frontend/Productivity-Agent
+npm run dev 
+thas all
+
+
+
+
+
+
+
 # Productivity Agent / Automated Todo List
 
 A LangGraph-based productivity agent with Amazon Bedrock LLM integration.
