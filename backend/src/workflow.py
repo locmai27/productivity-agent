@@ -151,7 +151,7 @@ class TodoAgentWorkflow:
             return self._analyze_todos(user_id=user_id)
         else:
             raise ValueError(f"Unknown tool: {tool_name}")
-
+    
     def _extract_tool_calls(self, resp: Dict[str, Any]) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         """
         Normalize tool calls from various formats.
@@ -230,8 +230,12 @@ class TodoAgentWorkflow:
         # Ensure assistant and thread exist (and push latest prompt/tools)
         merge_prompt = os.getenv("BACKBOARD_MERGE_PROMPT", "true").lower() in {"1", "true", "yes"}
         if merge_prompt:
-            # Use a minimal system prompt on the assistant and include full instructions in the message.
-            await self.backboard.ensure_assistant(user_id, tools=self.tools, system_prompt="")
+            # Keep assistant prompt in sync to avoid stale templates with brace tokens.
+            await self.backboard.ensure_assistant(
+                user_id,
+                tools=self.tools,
+                system_prompt=self.backboard.defaults.system_prompt,
+            )
         else:
             await self.backboard.ensure_assistant(user_id, tools=self.tools)
         await self.backboard.start_session(user_id)
@@ -239,7 +243,7 @@ class TodoAgentWorkflow:
         # Build context with current todos + uploaded docs (so the model knows it can use them)
         todos = self.db.get_all_todos(user_id=user_id)
         context = f"\n\nCurrent todos: {todos}" if todos else "\n\nNo todos yet."
-
+        
         try:
             thread_id = await self.backboard.get_thread_id(user_id)
             docs = await self.backboard.client.list_thread_documents(thread_id)
@@ -255,7 +259,33 @@ class TodoAgentWorkflow:
             pass
         
         # ReAct-style loop (explicit Thought -> Action -> Observation -> Final)
-        tools_text = json.dumps(self.tools, ensure_ascii=True)
+        tools_lines = ["Available tools:"]
+        for tool in self.tools:
+            if not isinstance(tool, dict):
+                continue
+            name = tool.get("name", "")
+            desc = tool.get("description", "")
+            params = tool.get("parameters", {}) or {}
+            props = params.get("properties", {}) if isinstance(params, dict) else {}
+            required = set(params.get("required", []) or []) if isinstance(params, dict) else set()
+
+            tools_lines.append(f"\nTool: {name}")
+            if desc:
+                tools_lines.append(f"Description: {desc}")
+            tools_lines.append("Parameters:")
+            if isinstance(props, dict) and props:
+                for key, meta in props.items():
+                    meta = meta or {}
+                    ptype = meta.get("type", "any")
+                    pdesc = meta.get("description", "")
+                    req = "required" if key in required else "optional"
+                    line = f"- {key}: {ptype} ({req})"
+                    if pdesc:
+                        line += f" - {pdesc}"
+                    tools_lines.append(line)
+            else:
+                tools_lines.append("- none")
+        tools_text = "\n".join(tools_lines)
         debug_prompt = os.getenv("BACKBOARD_DEBUG_PROMPT", "true").lower() in {"1", "true", "yes"}
         scratchpad = ""
 
@@ -265,13 +295,10 @@ class TodoAgentWorkflow:
         for step in range(5):
             react_instructions = (
                 "You are a ReAct agent. Use tools when needed.\n"
-                "Respond ONLY with a single JSON object using one of the forms:\n"
-                "Single action:\n"
-                '{"thought":"...","action":"create_todo|update_todo|delete_todo|mark_complete|get_all_todos|analyze_todos|final",'
-                '"action_input":{... or null},"final":"..."}\n'
-                "Multiple actions:\n"
-                '{"thought":"...","actions":[{"action":"create_todo|update_todo|delete_todo|mark_complete|get_all_todos|analyze_todos",'
-                '"action_input":{...}}, ...], "final":"..."}\n'
+                "Respond ONLY with a single JSON object.\n"
+                "Required keys: thought, final.\n"
+                "Use either action + action_input (single) or actions (list).\n"
+                "Valid actions: create_todo, update_todo, delete_todo, mark_complete, get_all_todos, analyze_todos, final.\n"
                 "If action is final, set action_input to null and put the user-facing response in final."
             )
 
@@ -296,11 +323,11 @@ class TodoAgentWorkflow:
                 print(f"[workflow] tools_sent={len(self.tools)} tools={self.tools}")
 
             resp = await self.backboard.chat_raw(
-                user_id=user_id,
-                text=full_message,
-                remember=remember,
-                llm_provider=self.llm_provider,
-                model_name=self.model_name,
+            user_id=user_id,
+            text=full_message,
+            remember=remember,
+            llm_provider=self.llm_provider,
+            model_name=self.model_name,
                 extra={},
             )
 

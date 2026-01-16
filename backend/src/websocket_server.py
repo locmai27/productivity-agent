@@ -4,24 +4,33 @@ WebSocket server for real-time chatbot communication with Backboard integration.
 
 import os
 import asyncio
+import threading
+import tempfile
+import mimetypes
+from typing import Optional, Any
+from concurrent.futures import ThreadPoolExecutor
+
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit, disconnect
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
+from PIL import Image
+
 from database_client import SQLiteDatabaseClient, create_database_client
 from backboard_client import BackboardWrapper
 from workflow import TodoAgentWorkflow
 from backboard_api_client import BackboardAPIClient
-import threading
-import tempfile
-from werkzeug.utils import secure_filename
-import mimetypes
 
-from PIL import Image
 
-# Eventlet is required for stable websocket support
-import eventlet
-eventlet.monkey_patch()
-from typing import Optional
+_executor = ThreadPoolExecutor(max_workers=8)
+
+
+def run_async_for_user(user_id: str, coro_factory) -> Any:
+    """Run async work in a native thread with thread-local DB/workflow."""
+    def _run():
+        workflow = get_workflow(user_id)
+        return asyncio.run(coro_factory(workflow))
+    return _executor.submit(_run).result()
 
 # Optional OCR deps; fall back gracefully if not installed
 try:
@@ -36,7 +45,7 @@ except Exception:  # pragma: no cover
 
 app = Flask(__name__)
 CORS(app, origins="*")
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # Backboard API key
 BACKBOARD_API_KEY = os.getenv("BACKBOARD_API_KEY")
@@ -84,6 +93,18 @@ def get_workflow(user_id: str):
         )
         _local.user_id = user_id
     return _local.workflow
+
+
+def reset_backboard_state(user_id: str) -> None:
+    """Clear cached assistant/thread ids so prompts can be rebuilt cleanly."""
+    try:
+        db = get_db()
+        if hasattr(db, "clear_active_thread"):
+            db.clear_active_thread(user_id)
+        if hasattr(db, "clear_assistant_id"):
+            db.clear_assistant_id(user_id)
+    except Exception:
+        pass
 
 
 @app.post("/api/chat/upload")
@@ -204,25 +225,18 @@ def upload_chat_file():
             ), 400
 
     def do_upload():
-        workflow = get_workflow(user_id)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(workflow.backboard.upload_session_doc(user_id, file_path))
-        finally:
-            loop.close()
+        return run_async_for_user(
+            user_id,
+            lambda wf: wf.backboard.upload_session_doc(user_id, file_path),
+        )
 
     # Return thread/doc info to help UI debug indexing
     def do_list_docs():
-        workflow = get_workflow(user_id)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            thread_id = loop.run_until_complete(workflow.backboard.get_thread_id(user_id))
-            docs = loop.run_until_complete(workflow.backboard.client.list_thread_documents(thread_id))
+        async def _list_docs(wf):
+            thread_id = await wf.backboard.get_thread_id(user_id)
+            docs = await wf.backboard.client.list_thread_documents(thread_id)
             return thread_id, docs or []
-        finally:
-            loop.close()
+        return run_async_for_user(user_id, _list_docs)
 
     try:
         upload_path = converted_path or file_path
@@ -238,22 +252,17 @@ def upload_chat_file():
                 return jsonify({"ok": False, "error": "OCR produced no text for this file."}), 400
 
             def do_attach_text():
-                workflow = get_workflow(user_id)
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    with open(ocr_md_path, "r", encoding="utf-8") as rf:
-                        ocr_text = rf.read().strip()
-                    return loop.run_until_complete(
-                        workflow.backboard.add_thread_message(
-                            user_id,
-                            content=f"OCR text from uploaded document:\n\n{ocr_text}",
-                            send_to_llm=False,
-                            memory="Auto",
-                        )
-                    )
-                finally:
-                    loop.close()
+                with open(ocr_md_path, "r", encoding="utf-8") as rf:
+                    ocr_text = rf.read().strip()
+                return run_async_for_user(
+                    user_id,
+                    lambda wf: wf.backboard.add_thread_message(
+                        user_id,
+                        content=f"OCR text from uploaded document:\n\n{ocr_text}",
+                        send_to_llm=False,
+                        memory="Auto",
+                    ),
+                )
 
             _attach = do_attach_text()
             thread_id, docs = do_list_docs()
@@ -274,13 +283,10 @@ def upload_chat_file():
         if upload_path != file_path:
             # re-run upload using converted file
             def do_upload_converted():
-                workflow = get_workflow(user_id)
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(workflow.backboard.upload_session_doc(user_id, upload_path))
-                finally:
-                    loop.close()
+                return run_async_for_user(
+                    user_id,
+                    lambda wf: wf.backboard.upload_session_doc(user_id, upload_path),
+                )
             result = do_upload_converted()
 
         thread_id, docs = do_list_docs()
@@ -311,13 +317,10 @@ def upload_chat_file():
             if ocr_md_path:
                 try:
                     def do_upload_ocr():
-                        workflow = get_workflow(user_id)
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            return loop.run_until_complete(workflow.backboard.upload_session_doc(user_id, ocr_md_path))
-                        finally:
-                            loop.close()
+                        return run_async_for_user(
+                            user_id,
+                            lambda wf: wf.backboard.upload_session_doc(user_id, ocr_md_path),
+                        )
                     _ocr_result = do_upload_ocr()
                     thread_id, docs = do_list_docs()
                     ocr_note = "Backboard failed to parse the document. Uploaded OCR text (.md) instead."
@@ -328,20 +331,15 @@ def upload_chat_file():
                             ocr_text = rf.read().strip()
                         if ocr_text:
                             def do_attach_text():
-                                workflow = get_workflow(user_id)
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                try:
-                                    return loop.run_until_complete(
-                                        workflow.backboard.add_thread_message(
-                                            user_id,
-                                            content=f"OCR text from uploaded document:\n\n{ocr_text}",
-                                            send_to_llm=False,
-                                            memory="Auto",
-                                        )
-                                    )
-                                finally:
-                                    loop.close()
+                                return run_async_for_user(
+                                    user_id,
+                                    lambda wf: wf.backboard.add_thread_message(
+                                        user_id,
+                                        content=f"OCR text from uploaded document:\n\n{ocr_text}",
+                                        send_to_llm=False,
+                                        memory="Auto",
+                                    ),
+                                )
                             _attach = do_attach_text()
                             ocr_note = "Backboard couldn't parse the file. Attached OCR text to the thread instead."
                         else:
@@ -374,13 +372,10 @@ def chat_history():
         return jsonify({"error": "Missing X-User-ID"}), 401
 
     def do_fetch():
-        workflow = get_workflow(user_id)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(workflow.backboard.get_thread(user_id))
-        finally:
-            loop.close()
+        return run_async_for_user(
+            user_id,
+            lambda wf: wf.backboard.get_thread(user_id),
+        )
 
     try:
         thread = do_fetch()
@@ -401,13 +396,10 @@ def chat_reset():
         return jsonify({"error": "Missing X-User-ID"}), 401
 
     def do_reset():
-        workflow = get_workflow(user_id)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(workflow.backboard.end_session(user_id, delete_thread=True))
-        finally:
-            loop.close()
+        return run_async_for_user(
+            user_id,
+            lambda wf: wf.backboard.end_session(user_id, delete_thread=True),
+        )
 
     try:
         do_reset()
@@ -427,25 +419,20 @@ def chat_documents():
         return jsonify({"error": "Missing X-User-ID"}), 401
 
     def do_fetch():
-        workflow = get_workflow(user_id)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            thread_id = loop.run_until_complete(workflow.backboard.get_thread_id(user_id))
-            docs = loop.run_until_complete(workflow.backboard.client.list_thread_documents(thread_id))
+        async def _list_docs(wf):
+            thread_id = await wf.backboard.get_thread_id(user_id)
+            docs = await wf.backboard.client.list_thread_documents(thread_id)
             return docs or []
-        finally:
-            loop.close()
+        return run_async_for_user(user_id, _list_docs)
 
     try:
         docs = do_fetch()
         thread_id = None
         try:
-            workflow = get_workflow(user_id)
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            thread_id = loop.run_until_complete(workflow.backboard.get_thread_id(user_id))
-            loop.close()
+            thread_id = run_async_for_user(
+                user_id,
+                lambda wf: wf.backboard.get_thread_id(user_id),
+            )
         except Exception:
             pass
         try:
@@ -520,17 +507,14 @@ def handle_message(data):
     # Process message asynchronously
     def process_and_respond():
         try:
-            workflow = get_workflow(user_id)
-            
-            # Run async workflow in event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
             try:
                 # If documents are still indexing, don't send to LLM yet.
                 # This prevents the model from claiming it can't see the uploaded file.
-                thread_id = loop.run_until_complete(workflow.backboard.get_thread_id(user_id))
-                docs = loop.run_until_complete(workflow.backboard.client.list_thread_documents(thread_id))
+                async def _list_docs(wf):
+                    thread_id = await wf.backboard.get_thread_id(user_id)
+                    docs = await wf.backboard.client.list_thread_documents(thread_id)
+                    return thread_id, docs
+                thread_id, docs = run_async_for_user(user_id, _list_docs)
                 pending = [d for d in (docs or []) if str(d.get("status", "")).lower() in {"pending", "processing", "indexing"}]
                 if pending:
                     socketio.emit(
@@ -549,7 +533,10 @@ def handle_message(data):
                     msg_lower = message.lower()
                     if any(term in msg_lower for term in ["upload", "uploaded", "file", "document", "syllabus", "deadline"]):
                         try:
-                            thread = loop.run_until_complete(workflow.backboard.get_thread(user_id))
+                            thread = run_async_for_user(
+                                user_id,
+                                lambda wf: wf.backboard.get_thread(user_id),
+                            )
                             msgs = thread.get("messages", []) if isinstance(thread, dict) else []
                             has_ocr = any(
                                 isinstance(m, dict)
@@ -590,14 +577,32 @@ def handle_message(data):
                         to=sid,
                     )
 
-                response = loop.run_until_complete(
-                    workflow.process_message(
+                try:
+                    response = run_async_for_user(
                         user_id,
-                        message,
-                        remember=remember,
-                        progress_cb=progress_emit,
+                        lambda wf: wf.process_message(
+                            user_id,
+                            message,
+                            remember=remember,
+                            progress_cb=progress_emit,
+                        ),
                     )
-                )
+                except Exception as e:
+                    err_text = str(e)
+                    if 'missing variables' in err_text and '"tool"' in err_text:
+                        # Stale assistant prompt with brace-style JSON; reset assistant/thread and retry once.
+                        reset_backboard_state(user_id)
+                        response = run_async_for_user(
+                            user_id,
+                            lambda wf: wf.process_message(
+                                user_id,
+                                message,
+                                remember=remember,
+                                progress_cb=progress_emit,
+                            ),
+                        )
+                    else:
+                        raise
                 
                 # Emit assistant response
                 socketio.emit(
@@ -610,8 +615,7 @@ def handle_message(data):
                     to=sid,
                 )
             finally:
-                loop.close()
-                
+                pass
         except Exception as e:
             print(f"Error processing message: {e}")
             import traceback

@@ -87,8 +87,8 @@ class BackboardDefaults:
     system_prompt: str = (
         "You are the in-app AI assistant for a calendar/todo web app.\n"
         "You CAN directly create/update/delete tasks in the user's calendar via tool calls.\n"
-        "When a calendar change is requested, respond with a tool call JSON object:\n"
-        '{"tool": "create_todo|update_todo|delete_todo|mark_complete", "arguments": {...}}\n'
+        "When a calendar change is requested, respond with a tool call JSON object.\n"
+        "Use fields: tool and arguments. Example: tool=create_todo, arguments=<object>.\n"
         "If the user uploads a document, extract actionable tasks/deadlines and add them.\n"
         "When you make changes, confirm what you changed (titles + dates) succinctly.\n"
     )

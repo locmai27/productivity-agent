@@ -151,6 +151,11 @@ class DatabaseClient(ABC):
     def set_assistant_id(self, user_id: str, assistant_id: str) -> None:
         """Set assistant_id for user."""
         pass
+
+    @abstractmethod
+    def clear_assistant_id(self, user_id: str) -> None:
+        """Clear assistant_id for user."""
+        pass
     
     @abstractmethod
     def get_active_thread(self, user_id: str) -> Optional[Tuple[str, datetime]]:
@@ -389,6 +394,12 @@ class SQLiteDatabaseClient(DatabaseClient):
             "INSERT OR REPLACE INTO backboard_assistants (user_id, assistant_id) VALUES (?, ?)",
             (user_id, assistant_id)
         )
+        self.connection.commit()
+
+    def clear_assistant_id(self, user_id: str) -> None:
+        """Clear assistant_id for user."""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM backboard_assistants WHERE user_id = ?", (user_id,))
         self.connection.commit()
     
     def get_active_thread(self, user_id: str) -> Optional[Tuple[str, datetime]]:
