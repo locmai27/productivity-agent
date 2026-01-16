@@ -5,7 +5,8 @@ import { Mail, Lock, Eye, EyeOff, Calendar, UserRoundCheck } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { GoogleAuthProvider, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { auth } from "@/firebase";
 
 function LogIn() {
   const [showPassword, setShowPassword] = useState(false);
@@ -13,7 +14,6 @@ function LogIn() {
   const [password, setPassword] = useState("");
 
   const navigate = useNavigate();
-  const auth = getAuth();
   const provider = new GoogleAuthProvider();
 
   const handleSubmit = (e: React.FormEvent) => {

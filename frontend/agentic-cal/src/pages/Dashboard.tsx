@@ -13,7 +13,10 @@ import { TaskCard } from "@/components/dashboard/TaskCard";
 import type { Task } from "@/types/task";
 import type { Tag } from "@/types/tag";
 import type { Reminder } from "@/types/reminder";
-import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth } from "@/firebase";
+import * as api from "@/lib/api";
+import { resetChatSession } from "@/lib/chat";
 
 const EXAMPLE_TAGS: Tag[] = [
     { id: "1", name: "work", color: "#3b82f6" },
@@ -177,13 +180,40 @@ function Dashboard() {
         return null;
     };
 
-    const auth = getAuth();
     const navigate = useNavigate();
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const didResetChatRef = useRef(false);
+    
     useEffect(() => {
-        onAuthStateChanged(auth, (user) => {
+        onAuthStateChanged(auth, async (user) => {
             if (user) {
                 // logged in so dont really need to do anything
                 console.log("logged in as user with UID", user.uid);
+                // Load tasks and tags from API
+                try {
+                    setLoading(true);
+                    setError(null);
+                    // Reset chat session on page load/refresh
+                    if (!didResetChatRef.current) {
+                        didResetChatRef.current = true;
+                        await resetChatSession();
+                    }
+                    const [loadedTasks, loadedTags] = await Promise.all([
+                        api.fetchTasks(),
+                        api.fetchTags()
+                    ]);
+                    setTasks(loadedTasks);
+                    setTags(loadedTags);
+                } catch (err) {
+                    console.error("Failed to load data:", err);
+                    setError(err instanceof Error ? err.message : "Failed to load data");
+                    // Fall back to example data if API fails
+                    setTasks(EXAMPLE_TASKS);
+                    setTags(EXAMPLE_TAGS);
+                } finally {
+                    setLoading(false);
+                }
             }
             else {
                 navigate("/");
@@ -191,10 +221,32 @@ function Dashboard() {
         })
     }, []);
 
+    useEffect(() => {
+        const handler = async () => {
+            try {
+                const [loadedTasks, loadedTags] = await Promise.all([
+                    api.fetchTasks(),
+                    api.fetchTags()
+                ]);
+                setTasks(loadedTasks);
+                setTags(loadedTags);
+            } catch (err) {
+                console.error("Failed to refresh calendar:", err);
+            }
+        };
+        window.addEventListener("calendar-updated", handler);
+        return () => window.removeEventListener("calendar-updated", handler);
+    }, []);
+
     const handleLogout = () => {
-        signOut(auth).then(() => {
-            navigate("/");
-        });
+        // Reset Backboard thread so a new session starts after logout/login
+        resetChatSession()
+            .catch(() => {})
+            .finally(() => {
+                signOut(auth).then(() => {
+                    navigate("/");
+                });
+            });
     };
 
     const handleMemories = () => {
@@ -248,43 +300,67 @@ function Dashboard() {
         containerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     };
 
-    const handleToggleComplete = (taskId: string) => {
-        setTasks((prev) =>
-            prev.map((task) =>
-                task.id === taskId ? { ...task, completed: !task.completed } : task
-            )
-        );
-        
-        // Update day view tasks if the modal is open
-        if (viewingDayDate) {
-            setViewingDayTasks((prev) =>
+    const handleToggleComplete = async (taskId: string) => {
+        try {
+            const updatedTask = await api.toggleTask(taskId);
+            setTasks((prev) =>
                 prev.map((task) =>
-                    task.id === taskId ? { ...task, completed: !task.completed } : task
+                    task.id === taskId ? updatedTask : task
                 )
             );
+            
+            // Update day view tasks if the modal is open
+            if (viewingDayDate) {
+                setViewingDayTasks((prev) =>
+                    prev.map((task) =>
+                        task.id === taskId ? updatedTask : task
+                    )
+                );
+            }
+        } catch (err) {
+            console.error("Failed to toggle task:", err);
+            setError(err instanceof Error ? err.message : "Failed to toggle task");
         }
     };
 
-    const handleMove = useCallback((taskId: string, newDate: string) => {
-        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, date: newDate } : t)));
-    }, []);
+    const handleMove = useCallback(async (taskId: string, newDate: string) => {
+        try {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+            const updatedTask = await api.updateTask(taskId, { ...task, date: newDate });
+            setTasks((prev) => prev.map((t) => (t.id === taskId ? updatedTask : t)));
+        } catch (err) {
+            console.error("Failed to move task:", err);
+            setError(err instanceof Error ? err.message : "Failed to move task");
+        }
+    }, [tasks]);
 
-    const handleAddTag = (name: string) => {
-        const colors = ["#3b82f6", "#22c55e", "#a855f7", "#ef4444", "#f59e0b", "#06b6d4"];
-        const newTag: Tag = {
-            id: Date.now().toString(),
-            name,
-            color: colors[Math.floor(Math.random() * colors.length)],
-        };
-        setTags((prev) => [...prev, newTag]);
+    const handleAddTag = async (name: string) => {
+        try {
+            const colors = ["#3b82f6", "#22c55e", "#a855f7", "#ef4444", "#f59e0b", "#06b6d4"];
+            const newTag = await api.createTag({
+                name,
+                color: colors[Math.floor(Math.random() * colors.length)],
+            });
+            setTags((prev) => [...prev, newTag]);
+        } catch (err) {
+            console.error("Failed to create tag:", err);
+            setError(err instanceof Error ? err.message : "Failed to create tag");
+        }
     };
 
     const handleEditTag = (id: string, name: string) => {
         setTags((prev) => prev.map((tag) => (tag.id === id ? { ...tag, name } : tag)));
     };
 
-    const handleDeleteTag = (id: string) => {
-        setTags((prev) => prev.filter((tag) => tag.id !== id));
+    const handleDeleteTag = async (id: string) => {
+        try {
+            await api.deleteTag(id);
+            setTags((prev) => prev.filter((tag) => tag.id !== id));
+        } catch (err) {
+            console.error("Failed to delete tag:", err);
+            setError(err instanceof Error ? err.message : "Failed to delete tag");
+        }
     };
 
     const handleOpenColorPicker = (tag: Tag) => {
@@ -337,25 +413,29 @@ function Dashboard() {
         setNewTaskReminders([]);
     };
 
-    const handleSaveNewTask = () => {
+    const handleSaveNewTask = async () => {
         if (!newTaskTitle.trim()) {
             alert("Please enter a task title");
             return;
         }
         if (!taskModalDate) return;
 
-        const newTask: Task = {
-            id: Date.now().toString(),
-            title: newTaskTitle,
-            description: newTaskDescription,
-            completed: false,
-            tags: newTaskTags,
-            date: taskModalDate,
-            reminders: newTaskReminders,
-        };
+        try {
+            const newTask = await api.createTask({
+                title: newTaskTitle,
+                description: newTaskDescription,
+                completed: false,
+                tags: newTaskTags,
+                date: taskModalDate,
+                reminders: newTaskReminders,
+            });
 
-        setTasks((prev) => [...prev, newTask]);
-        handleCloseTaskModal();
+            setTasks((prev) => [...prev, newTask]);
+            handleCloseTaskModal();
+        } catch (err) {
+            console.error("Failed to create task:", err);
+            setError(err instanceof Error ? err.message : "Failed to create task");
+        }
     };
 
     const handleToggleTaskTag = (tag: Tag) => {
@@ -426,49 +506,60 @@ function Dashboard() {
         setEditTaskReminders([]);
     };
 
-    const handleSaveEditTask = () => {
+    const handleSaveEditTask = async () => {
         if (!editTaskTitle.trim()) {
             alert("Please enter a task title");
             return;
         }
         if (!editingTask) return;
 
-        const updatedTask = {
-            ...editingTask,
-            title: editTaskTitle,
-            description: editTaskDescription,
-            tags: editTaskTags,
-            reminders: editTaskReminders,
-        };
+        try {
+            const updatedTask = await api.updateTask(editingTask.id, {
+                title: editTaskTitle,
+                description: editTaskDescription,
+                tags: editTaskTags,
+                reminders: editTaskReminders,
+            });
 
-        setTasks((prev) =>
-            prev.map((task) =>
-                task.id === editingTask.id ? updatedTask : task
-            )
-        );
-
-        // Update day view tasks if the modal is open
-        if (viewingDayDate) {
-            setViewingDayTasks((prev) =>
+            setTasks((prev) =>
                 prev.map((task) =>
                     task.id === editingTask.id ? updatedTask : task
                 )
             );
-        }
 
-        handleCloseEditModal();
+            // Update day view tasks if the modal is open
+            if (viewingDayDate) {
+                setViewingDayTasks((prev) =>
+                    prev.map((task) =>
+                        task.id === editingTask.id ? updatedTask : task
+                    )
+                );
+            }
+
+            handleCloseEditModal();
+        } catch (err) {
+            console.error("Failed to update task:", err);
+            setError(err instanceof Error ? err.message : "Failed to update task");
+        }
     };
 
-    const handleDeleteTask = () => {
+    const handleDeleteTask = async () => {
         if (!editingTask) return;
-        setTasks((prev) => prev.filter((task) => task.id !== editingTask.id));
         
-        // Update day view tasks if the modal is open
-        if (viewingDayDate) {
-            setViewingDayTasks((prev) => prev.filter((task) => task.id !== editingTask.id));
+        try {
+            await api.deleteTask(editingTask.id);
+            setTasks((prev) => prev.filter((task) => task.id !== editingTask.id));
+            
+            // Update day view tasks if the modal is open
+            if (viewingDayDate) {
+                setViewingDayTasks((prev) => prev.filter((task) => task.id !== editingTask.id));
+            }
+            
+            handleCloseEditModal();
+        } catch (err) {
+            console.error("Failed to delete task:", err);
+            setError(err instanceof Error ? err.message : "Failed to delete task");
         }
-        
-        handleCloseEditModal();
     };
 
     const handleToggleEditTaskTag = (tag: Tag) => {

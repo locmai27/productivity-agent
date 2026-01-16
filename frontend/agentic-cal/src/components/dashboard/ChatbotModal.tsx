@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X, Send, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,12 +6,16 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { io, Socket } from "socket.io-client";
+import { auth } from "@/firebase";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
 }
+
+const WS_URL = import.meta.env.VITE_WS_URL || "http://localhost:5001";
 
 export function ChatbotModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -24,9 +28,103 @@ export function ChatbotModal() {
     },
   ]);
   const [input, setInput] = useState("");
+  const [isConnected, setIsConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    if (isOpen && auth.currentUser) {
+      // Connect to WebSocket when modal opens
+      const user_id = auth.currentUser.uid;
+      const socket = io(WS_URL, {
+        auth: { user_id },
+        query: { user_id },
+        transports: ['websocket', 'polling']
+      });
+
+      socket.on('connect', () => {
+        console.log('Connected to WebSocket');
+        setIsConnected(true);
+      });
+
+      socket.on('connected', (data) => {
+        console.log('WebSocket connection confirmed:', data);
+        setIsConnected(true);
+      });
+
+      // Load conversation history from backend (Backboard thread)
+      (async () => {
+        try {
+          const res = await fetch(`${WS_URL}/api/chat/history`, {
+            headers: { "X-User-ID": user_id },
+          });
+          const data = await res.json();
+          if (!res.ok || !data?.ok) return;
+          const thread = data.thread;
+          const msgs = Array.isArray(thread?.messages) ? thread.messages : [];
+          const mapped: Message[] = msgs
+            .map((m: any) => {
+              const role = (m?.role === "assistant" || m?.role === "user") ? m.role : "assistant";
+              const content = typeof m?.content === "string" ? m.content : (typeof m?.message === "string" ? m.message : "");
+              if (!content) return null;
+              return { id: String(m?.message_id || m?.id || Date.now() + Math.random()), role, content };
+            })
+            .filter(Boolean) as Message[];
+
+          if (mapped.length > 0) {
+            setMessages(mapped);
+          }
+        } catch {
+          // ignore history load failures
+        }
+      })();
+
+      socket.on('message', (data: { role: string; content: string }) => {
+        // The UI already appends the user's message locally on send.
+        // The server should not echo it, but ignore it here too to avoid duplicates.
+        if (data.role === "user") return;
+        const newMessage: Message = {
+          id: Date.now().toString(),
+          role: data.role as "user" | "assistant",
+          content: data.content,
+        };
+        setMessages((prev) => [...prev, newMessage]);
+        setIsLoading(false);
+      });
+
+      socket.on('error', (error: { message: string }) => {
+        console.error('WebSocket error:', error);
+        const errorMessage: Message = {
+          id: Date.now().toString(),
+          role: "assistant",
+          content: `Error: ${error.message}`,
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+        setIsLoading(false);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Disconnected from WebSocket');
+        setIsConnected(false);
+      });
+
+      socket.on('calendar_updated', () => {
+        window.dispatchEvent(new Event("calendar-updated"));
+      });
+
+      socketRef.current = socket;
+
+      return () => {
+        socket.disconnect();
+        socketRef.current = null;
+      };
+    }
+  }, [isOpen]);
 
   const handleSend = () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !socketRef.current || !isConnected || isLoading || isIndexing) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -35,25 +133,154 @@ export function ChatbotModal() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput("");
+    setIsLoading(true);
+    
+    // Send message via WebSocket
+    socketRef.current.emit('message', {
+      user_id: auth.currentUser?.uid,
+      message: input.trim(),
+      remember: rememberConversation,
+    });
 
-    // Simulated response (will be replaced with actual AI integration)
-    setTimeout(() => {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: "I understand you want to " + input.toLowerCase() + ". This feature will be connected to the AI backend soon!",
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-    }, 1000);
+    setInput("");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Handle file upload (will be integrated with backend)
-      console.log("File selected:", file.name);
-      // You can add logic here to upload the file to your backend
+      const user = auth.currentUser;
+      if (!user) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: "assistant",
+            content: "Please sign in before uploading files.",
+          },
+        ]);
+        return;
+      }
+
+      setIsIndexing(true);
+      setUploadProgress(0);
+
+      const form = new FormData();
+      form.append("file", file);
+
+      // Use XHR so we can show upload progress
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${WS_URL}/api/chat/upload`);
+      xhr.setRequestHeader("X-User-ID", user.uid);
+
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable) return;
+        const pct = Math.round((evt.loaded / evt.total) * 100);
+        setUploadProgress(pct);
+      };
+
+      xhr.onload = async () => {
+        try {
+          const data = JSON.parse(xhr.responseText || "{}");
+          if (xhr.status < 200 || xhr.status >= 300 || !data?.ok) {
+            throw new Error(data?.error || `Upload failed (${xhr.status})`);
+          }
+
+          const uploadedName = data?.filename || file.name;
+          const docs = Array.isArray(data?.documents) ? data.documents : [];
+          const docCount = docs.length;
+          const note = data?.note ? ` (${data.note})` : "";
+          const ocrAttached = Boolean(data?.ocr_attached);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: "assistant",
+              content: `Uploaded "${uploadedName}". I’m indexing it now… (${docCount} document(s) in this thread)${note}`,
+            },
+          ]);
+
+          if (ocrAttached) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: "assistant",
+                content: `OCR text attached. Tell me what you want me to do with it (e.g., “extract deadlines and add them to my calendar this week”).`,
+              },
+            ]);
+          } else {
+            // Poll for document indexing completion
+            const poll = async () => {
+              const res = await fetch(`${WS_URL}/api/chat/documents`, {
+                headers: { "X-User-ID": user.uid },
+              });
+              const body = await res.json().catch(() => ({}));
+              const docs = Array.isArray(body?.documents) ? body.documents : [];
+              const pending = docs.some((d: any) => {
+                const s = String(d?.status || "").toLowerCase();
+                return ["pending", "processing", "indexing"].includes(s);
+              });
+              if (pending) return false;
+              if (docs.length === 0) return false;
+              return true;
+            };
+
+            const started = Date.now();
+            while (Date.now() - started < 120_000) {
+              // eslint-disable-next-line no-await-in-loop
+              const done = await poll();
+              if (done) break;
+              // eslint-disable-next-line no-await-in-loop
+              await new Promise((r) => setTimeout(r, 2000));
+            }
+
+            const res2 = await fetch(`${WS_URL}/api/chat/documents`, {
+              headers: { "X-User-ID": user.uid },
+            });
+            const body2 = await res2.json().catch(() => ({}));
+            const docs2 = Array.isArray(body2?.documents) ? body2.documents : [];
+            const docNames = docs2.map((d: any) => d?.filename).filter(Boolean);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: "assistant",
+                content: `Indexing complete. I can see: ${docNames.length ? docNames.join(", ") : "no documents"}. Tell me what you want me to do with it (e.g., “extract deadlines and add them to my calendar this week”).`,
+              },
+            ]);
+          }
+        } catch (err) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: "assistant",
+              content: `Upload error: ${err instanceof Error ? err.message : "unknown error"}`,
+            },
+          ]);
+        } finally {
+          setUploadProgress(null);
+          setIsIndexing(false);
+          // reset file input so selecting same file again triggers change
+          e.target.value = "";
+        }
+      };
+
+      xhr.onerror = () => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: "assistant",
+            content: "Upload error: network error",
+          },
+        ]);
+        setUploadProgress(null);
+        setIsIndexing(false);
+        e.target.value = "";
+      };
+
+      xhr.send(form);
     }
   };
 
@@ -124,10 +351,21 @@ export function ChatbotModal() {
                             : "bg-muted/50 text-foreground"
                         }`}
                       >
-                        <p className="text-sm">{message.content}</p>
+                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                       </div>
                     </motion.div>
                   ))}
+                  {isLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-muted/50 text-foreground p-3 rounded-lg">
+                        <div className="flex gap-1">
+                          <span className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                          <span className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                          <span className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </ScrollArea>
 
@@ -165,14 +403,26 @@ export function ChatbotModal() {
                   <Input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask me anything..."
+                    placeholder={
+                      !isConnected
+                        ? "Connecting..."
+                        : isIndexing
+                          ? "Indexing document…"
+                          : isLoading
+                            ? "Thinking…"
+                            : "Ask me anything..."
+                    }
                     className="flex-1 bg-background/50"
-                    onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                    disabled={!isConnected || isLoading || isIndexing}
+                    onKeyDown={(e) => e.key === "Enter" && !isLoading && !isIndexing && handleSend()}
                   />
-                  <Button size="icon" onClick={handleSend}>
+                  <Button size="icon" onClick={handleSend} disabled={!isConnected || isLoading || isIndexing}>
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
+                {uploadProgress !== null && (
+                  <p className="text-xs text-muted-foreground">Uploading: {uploadProgress}%</p>
+                )}
               </div>
             </motion.div>
           </>

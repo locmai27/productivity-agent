@@ -75,9 +75,12 @@ class DatabaseClient(ABC):
         pass
     
     @abstractmethod
-    def get_all_todos(self) -> List[Dict[str, Any]]:
+    def get_all_todos(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Retrieve all todos.
+        Retrieve all todos, optionally filtered by user_id.
+        
+        Args:
+            user_id: Optional user ID to filter todos
         
         Returns:
             List of todo dictionaries
@@ -201,6 +204,7 @@ class SQLiteDatabaseClient(DatabaseClient):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS todos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
                 title TEXT NOT NULL,
                 description TEXT,
                 completed BOOLEAN DEFAULT 0,
@@ -208,6 +212,12 @@ class SQLiteDatabaseClient(DatabaseClient):
                 created_at TEXT NOT NULL
             )
         """)
+        
+        # Add user_id column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute("ALTER TABLE todos ADD COLUMN user_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tags (
@@ -253,8 +263,8 @@ class SQLiteDatabaseClient(DatabaseClient):
         """Create a new todo item."""
         cursor = self.connection.cursor()
         cursor.execute(
-            "INSERT INTO todos (title, description, completed, date, created_at) VALUES (?, ?, ?, ?, ?)",
-            (todo.get('title'), todo.get('description'), False, todo.get('date'), datetime.now(timezone.utc).isoformat())
+            "INSERT INTO todos (user_id, title, description, completed, date, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (todo.get('user_id'), todo.get('title'), todo.get('description'), False, todo.get('date'), datetime.now(timezone.utc).isoformat())
         )
         todo_id = cursor.lastrowid
         
@@ -300,10 +310,13 @@ class SQLiteDatabaseClient(DatabaseClient):
         """, (todo_id,))
         return [dict(row) for row in cursor.fetchall()]
     
-    def get_all_todos(self) -> List[Dict[str, Any]]:
-        """Retrieve all todos."""
+    def get_all_todos(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieve all todos, optionally filtered by user_id."""
         cursor = self.connection.cursor()
-        cursor.execute("SELECT * FROM todos ORDER BY created_at DESC")
+        if user_id:
+            cursor.execute("SELECT * FROM todos WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+        else:
+            cursor.execute("SELECT * FROM todos ORDER BY created_at DESC")
         todos = [dict(row) for row in cursor.fetchall()]
         for todo in todos:
             todo['tags'] = self._get_todo_tags(todo['id'])
@@ -387,6 +400,9 @@ class SQLiteDatabaseClient(DatabaseClient):
             return None
         
         expires_at = datetime.fromisoformat(row['expires_at'])
+        # If stored without timezone (older DBs), assume UTC to avoid accidental expiry.
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) >= expires_at:
             self.clear_active_thread(user_id)
             return None
